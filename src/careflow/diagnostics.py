@@ -47,6 +47,7 @@ class ConsistencyChecker:
         self.check_appointment_state()
         self.check_encounter_completion()
         self.check_followup_leases()
+        self.check_notification_tasks()
         self.check_incident_ledger()
         self.check_signed_records()
         self.check_duplicate_active_reservations()
@@ -168,6 +169,17 @@ class ConsistencyChecker:
                      {"patient_id": row["patient_id"], "assigned_to": row["assigned_to"],
                       "claim_until": row["claim_until"], "version": row["version"]},
                      "任务仍待处理时，可在当前负责人确认后重新领取。")
+
+    def check_notification_tasks(self) -> None:
+        rows = self.connection.execute(
+            "SELECT t.id,t.patient_id,t.assigned_to,t.claim_until,t.version,t.state "
+            "FROM notification_tasks t WHERE t.clinic_id=? AND t.state='claimed' AND t.claim_until<=?",
+            (self.clinic_id, self.as_of)).fetchall()
+        for row in rows:
+            self.add("notification.expired_claim", "low", "notification_task", row["id"],
+                     {"patient_id": row["patient_id"], "assigned_to": row["assigned_to"],
+                      "claim_until": row["claim_until"], "state": row["state"], "version": row["version"]},
+                     "租约已过期；仍需触达时可由其他工作人员重新领取，旧令牌不能再登记结果。")
 
     def check_incident_ledger(self) -> None:
         rows = self.connection.execute(

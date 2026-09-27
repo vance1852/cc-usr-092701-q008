@@ -130,7 +130,7 @@ def create_handler(app: Careflow):
                 return app.grant_consent(clinic_id, actor_id, segments[1], data.get("purpose", ""),
                                          data.get("revision", 0), data.get("text_digest", ""),
                                          expires_at=data.get("expires_at")), 201
-            if len(segments) == 4 and segments[0] == "consents" and segments[2] == "withdraw" and self.command == "POST":
+            if len(segments) == 3 and segments[0] == "consents" and segments[2] == "withdraw" and self.command == "POST":
                 return app.withdraw_consent(clinic_id, actor_id, segments[1], self.body().get("reason", "")), 200
             if len(segments) == 3 and segments[0] == "patients" and segments[2] == "assessments" and self.command == "POST":
                 data = self.body()
@@ -192,6 +192,53 @@ def create_handler(app: Careflow):
                 data = self.body()
                 return app.complete_followup(clinic_id, actor_id, segments[1], data.get("claim_token", ""),
                                              data.get("outcome", ""), data.get("expected_version", 0)), 200
+            if self.command == "POST" and len(segments) == 3 and segments[0] == "patients" and segments[2] == "contact-preferences":
+                data = self.body()
+                return app.notifications.set_preference(clinic_id, actor_id, segments[1], data.get("timezone", ""),
+                                                         data.get("channels", {}), quiet_hours=data.get("quiet_hours"),
+                                                         reason=data.get("reason", "首次登记"),
+                                                         expected_version=data.get("expected_version")), 200
+            if self.command == "GET" and len(segments) == 3 and segments[0] == "patients" and segments[2] == "contact-preferences":
+                return app.notifications.get_preference(clinic_id, actor_id, segments[1]), 200
+            if self.command == "GET" and len(segments) == 4 and segments[0] == "patients" and segments[2] == "contact-preferences" and segments[3] == "revisions":
+                return {"items": app.notifications.preference_revisions(clinic_id, actor_id, segments[1])}, 200
+            if self.command == "POST" and segments == ["notifications", "sweep"]:
+                data = self.body()
+                return app.notifications.sweep_due(clinic_id, actor_id, limit=data.get("limit", 200)), 200
+            if self.command == "POST" and segments == ["notifications"]:
+                data = self.body()
+                return app.notifications.generate(clinic_id, actor_id, data.get("patient_id", ""),
+                                                  data.get("purpose", ""), data.get("source_type", ""),
+                                                  data.get("source_id", ""), data.get("source_event", ""),
+                                                  title=data.get("title", ""), detail=data.get("detail", "")), 201
+            if self.command == "GET" and segments and segments[0] == "notifications":
+                params = parse_qs(path.query)
+                if len(segments) == 1:
+                    return app.notifications.list_tasks(clinic_id, actor_id,
+                                                        state=params.get("state", ["open"])[0],
+                                                        limit=int(params.get("limit", [200])[0])), 200
+                if len(segments) == 3 and segments[2] == "history":
+                    return app.notifications.task_history(clinic_id, actor_id, segments[1]), 200
+                if len(segments) == 2:
+                    return app.notifications.get_task(clinic_id, actor_id, segments[1]), 200
+                return {"error": {"code": "not_found", "message": "接口不存在"}}, 404
+            if self.command == "POST" and segments == ["notifications", "claim"]:
+                data = self.body()
+                return {"items": app.notifications.claim_tasks(clinic_id, actor_id, limit=data.get("limit", 20),
+                                                                 lease_minutes=data.get("lease_minutes", 15))}, 200
+            if self.command == "POST" and len(segments) == 3 and segments[0] == "notifications" and segments[2] == "attempts":
+                data = self.body()
+                return app.notifications.record_attempt(clinic_id, actor_id, segments[1], data.get("claim_token", ""),
+                                                        data.get("result", ""), data.get("note", ""),
+                                                        data.get("expected_version", 0)), 200
+            if self.command == "POST" and len(segments) == 3 and segments[0] == "notifications" and segments[2] == "resolve-manual":
+                data = self.body()
+                return app.notifications.resolve_manually(clinic_id, actor_id, segments[1], data.get("outcome", ""),
+                                                          data.get("expected_version", 0)), 200
+            if self.command == "POST" and len(segments) == 3 and segments[0] == "notifications" and segments[2] == "reopen":
+                data = self.body()
+                return app.notifications.reopen(clinic_id, actor_id, segments[1], data.get("reason", ""),
+                                                data.get("expected_version", 0)), 200
             if len(segments) == 3 and segments[0] == "patients" and segments[2] == "incidents" and self.command == "POST":
                 data = self.body()
                 return app.report_incident(clinic_id, actor_id, segments[1], data.get("category", ""),

@@ -288,6 +288,77 @@ CREATE TABLE IF NOT EXISTS followups (
     version INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS followups_due ON followups(state,due_at);
+CREATE TABLE IF NOT EXISTS contact_preferences (
+    id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL UNIQUE REFERENCES patients(id),
+    timezone TEXT NOT NULL,
+    channels_json TEXT NOT NULL,
+    quiet_start TEXT,
+    quiet_end TEXT,
+    recorded_by TEXT NOT NULL REFERENCES staff(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS contact_preference_revisions (
+    preference_id TEXT NOT NULL REFERENCES contact_preferences(id),
+    revision INTEGER NOT NULL,
+    timezone TEXT NOT NULL,
+    channels_json TEXT NOT NULL,
+    quiet_start TEXT,
+    quiet_end TEXT,
+    changed_by TEXT NOT NULL REFERENCES staff(id),
+    change_reason TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(preference_id,revision)
+);
+CREATE TABLE IF NOT EXISTS notification_tasks (
+    id TEXT PRIMARY KEY,
+    clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    purpose TEXT NOT NULL,
+    channel TEXT,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    source_event TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('queued','claimed','blocked','succeeded','cancelled')),
+    assigned_to TEXT REFERENCES staff(id),
+    claim_token TEXT,
+    claim_until TEXT,
+    claim_number INTEGER NOT NULL DEFAULT 0,
+    blocked_reason TEXT,
+    blocked_at TEXT,
+    final_outcome TEXT,
+    completed_by TEXT REFERENCES staff(id),
+    completed_at TEXT,
+    consent_id TEXT REFERENCES consents(id),
+    consent_revision INTEGER,
+    preference_version INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS notification_tasks_due ON notification_tasks(clinic_id,state,due_at,id);
+CREATE INDEX IF NOT EXISTS notification_tasks_patient ON notification_tasks(patient_id,state);
+CREATE INDEX IF NOT EXISTS notification_tasks_source ON notification_tasks(source_type,source_id,source_event);
+CREATE TABLE IF NOT EXISTS notification_task_events (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES notification_tasks(id),
+    sequence INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    actor_id TEXT REFERENCES staff(id),
+    note TEXT NOT NULL DEFAULT '',
+    attempt_result TEXT,
+    consent_id TEXT,
+    consent_revision INTEGER,
+    occurred_at TEXT NOT NULL,
+    UNIQUE(task_id,sequence)
+);
+CREATE INDEX IF NOT EXISTS notification_task_events_task ON notification_task_events(task_id,sequence);
 CREATE TABLE IF NOT EXISTS observations (
     id TEXT PRIMARY KEY,
     patient_id TEXT NOT NULL REFERENCES patients(id),
