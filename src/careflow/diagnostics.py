@@ -47,6 +47,7 @@ class ConsistencyChecker:
         self.check_appointment_state()
         self.check_encounter_completion()
         self.check_followup_leases()
+        self.check_notification_tasks()
         self.check_incident_ledger()
         self.check_signed_records()
         self.check_duplicate_active_reservations()
@@ -168,6 +169,28 @@ class ConsistencyChecker:
                      {"patient_id": row["patient_id"], "assigned_to": row["assigned_to"],
                       "claim_until": row["claim_until"], "version": row["version"]},
                      "任务仍待处理时，可在当前负责人确认后重新领取。")
+
+    def check_notification_tasks(self) -> None:
+        rows = self.connection.execute(
+            "SELECT id,patient_id,assigned_to,claim_until,version FROM notification_tasks "
+            "WHERE clinic_id=? AND state='claimed' AND claim_until<=? ORDER BY id",
+            (self.clinic_id, self.as_of)).fetchall()
+        for row in rows:
+            self.add("notification.expired_claim", "low", "notification_task", row["id"],
+                     {"patient_id": row["patient_id"], "assigned_to": row["assigned_to"],
+                      "claim_until": row["claim_until"], "version": row["version"]},
+                     "任务仍待联系时，可在授权核对后重新领取。")
+        rows = self.connection.execute(
+            "SELECT t.id,t.patient_id,t.consent_revision,c.state AS consent_state,c.expires_at "
+            "FROM notification_tasks t LEFT JOIN consents c ON c.id=t.consent_id "
+            "WHERE t.clinic_id=? AND t.state IN ('pending','claimed') ORDER BY t.id",
+            (self.clinic_id,)).fetchall()
+        for row in rows:
+            if row["consent_state"] != "granted" or (row["expires_at"] and row["expires_at"] <= self.as_of):
+                self.add("notification.consent_stale", "medium", "notification_task", row["id"],
+                         {"patient_id": row["patient_id"], "consent_state": row["consent_state"],
+                          "consent_expires_at": row["expires_at"], "recorded_revision": row["consent_revision"]},
+                         "核对患者联系授权后再评估该任务；不要凭旧授权版本继续联系。")
 
     def check_incident_ledger(self) -> None:
         rows = self.connection.execute(

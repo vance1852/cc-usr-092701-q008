@@ -192,6 +192,35 @@ def create_handler(app: Careflow):
                 data = self.body()
                 return app.complete_followup(clinic_id, actor_id, segments[1], data.get("claim_token", ""),
                                              data.get("outcome", ""), data.get("expected_version", 0)), 200
+            if self.command == "POST" and len(segments) == 3 and segments[0] == "patients" and segments[2] == "contact-preferences":
+                data = self.body()
+                return app.notifications.set_preference(clinic_id, actor_id, segments[1], data.get("purpose", ""),
+                                                        data.get("channels", []), data.get("quiet_start"),
+                                                        data.get("quiet_end"), data.get("timezone", "")), 201
+            if self.command == "GET" and len(segments) == 3 and segments[0] == "patients" and segments[2] == "contact-preferences":
+                return {"items": app.notifications.current_preferences(clinic_id, actor_id, segments[1])}, 200
+            if self.command == "POST" and segments == ["notification-tasks", "generate"]:
+                data = self.body()
+                return app.notifications.generate_due_followup_tasks(clinic_id, actor_id,
+                                                                     limit=data.get("limit", 100)), 200
+            if self.command == "GET" and segments == ["notification-tasks"]:
+                params = parse_qs(path.query)
+                return {"items": app.notifications.list_tasks(clinic_id, actor_id,
+                                                              state=params.get("state", [None])[0],
+                                                              patient_id=params.get("patient_id", [None])[0],
+                                                              limit=int(params.get("limit", [100])[0]))}, 200
+            if self.command == "POST" and segments == ["notification-tasks", "claim"]:
+                data = self.body()
+                return {"items": app.notifications.claim_tasks(clinic_id, actor_id, limit=data.get("limit", 20),
+                                                               lease_minutes=data.get("lease_minutes", 5))}, 200
+            if len(segments) == 3 and segments[0] == "notification-tasks" and segments[2] == "result" and self.command == "POST":
+                data = self.body()
+                return app.notifications.register_result(clinic_id, actor_id, segments[1], data.get("claim_token", ""),
+                                                         data.get("expected_version", 0), data.get("outcome", ""),
+                                                         data.get("disposition", ""), data.get("note", ""),
+                                                         retry_after_minutes=data.get("retry_after_minutes", 30)), 200
+            if len(segments) == 2 and segments[0] == "notification-tasks" and self.command == "GET":
+                return app.notifications.task_detail(clinic_id, actor_id, segments[1]), 200
             if len(segments) == 3 and segments[0] == "patients" and segments[2] == "incidents" and self.command == "POST":
                 data = self.body()
                 return app.report_incident(clinic_id, actor_id, segments[1], data.get("category", ""),

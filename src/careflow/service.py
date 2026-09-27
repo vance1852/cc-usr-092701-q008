@@ -37,11 +37,13 @@ class Careflow:
         from .exports import PatientExportService
         from .milestones import MilestoneService
         from .clinical_flags import ClinicalFlagService
+        from .notifications import NotificationService
         self.supplies = SupplyService(self.db, self.clock)
         self.reports = ReportService(self.db, self.clock)
         self.exports = PatientExportService(self.db, self.clock)
         self.milestones = MilestoneService(self.db, self.clock)
         self.clinical_flags = ClinicalFlagService(self.db, self.clock)
+        self.notifications = NotificationService(self.db, self.clock)
 
     def now(self) -> str:
         return timestamp(self.clock.now())
@@ -326,6 +328,8 @@ class Careflow:
                                aggregate_type="consent", aggregate_id=consent_id, action="consent.withdrawn",
                                occurred_at=now, payload={"purpose": row["purpose"], "reason": reason})
             self._pause_plans_for_withdrawal(connection, row, now, actor_id)
+            if row["purpose"] == "followup_contact":
+                self.notifications.block_pending_for_withdrawal(connection, clinic_id, row["patient_id"], row, now, actor_id)
         return {"id": consent_id, "state": "withdrawn", "withdrawn_at": now, "replayed": False}
 
     def _pause_plans_for_withdrawal(self, connection, consent, now: str, actor_id: str) -> int:
@@ -618,6 +622,8 @@ class Careflow:
             audit.append_event(connection, clinic_id=clinic_id, actor_id=actor_id, patient_id=appointment["patient_id"],
                                aggregate_type="appointment", aggregate_id=appointment_id, action=f"appointment.{action}",
                                occurred_at=now, payload={"from": appointment["state"], "to": after, "reason": reason, "version": version})
+            if action in {"book", "cancel"}:
+                self.notifications.generate_for_appointment_event(connection, clinic_id, actor_id, appointment, action, now)
         return {"id": appointment_id, "state": after, "version": version, "updated_at": now}
 
     def encounter_for_appointment(self, clinic_id: str, actor_id: str, appointment_id: str) -> dict[str, Any]:

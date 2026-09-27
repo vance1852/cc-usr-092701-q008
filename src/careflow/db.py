@@ -11,7 +11,7 @@ from typing import Iterator
 
 from .errors import StorageFailure
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -288,6 +288,61 @@ CREATE TABLE IF NOT EXISTS followups (
     version INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS followups_due ON followups(state,due_at);
+CREATE TABLE IF NOT EXISTS contact_preferences (
+    id TEXT PRIMARY KEY,
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    purpose TEXT NOT NULL CHECK(purpose IN ('appointment_updates','followup_reminders')),
+    revision INTEGER NOT NULL,
+    channels_json TEXT NOT NULL,
+    quiet_start TEXT,
+    quiet_end TEXT,
+    timezone TEXT NOT NULL,
+    recorded_by TEXT NOT NULL REFERENCES staff(id),
+    created_at TEXT NOT NULL,
+    UNIQUE(patient_id,purpose,revision)
+);
+CREATE INDEX IF NOT EXISTS contact_preferences_current ON contact_preferences(patient_id,purpose,revision DESC);
+CREATE TABLE IF NOT EXISTS notification_tasks (
+    id TEXT PRIMARY KEY,
+    clinic_id TEXT NOT NULL REFERENCES clinics(id),
+    patient_id TEXT NOT NULL REFERENCES patients(id),
+    purpose TEXT NOT NULL CHECK(purpose IN ('appointment_updates','followup_reminders')),
+    channel TEXT NOT NULL CHECK(channel IN ('phone','message')),
+    summary TEXT NOT NULL,
+    source_kind TEXT NOT NULL CHECK(source_kind IN ('appointment','followup')),
+    source_id TEXT NOT NULL,
+    source_event TEXT NOT NULL,
+    consent_id TEXT NOT NULL REFERENCES consents(id),
+    consent_revision INTEGER NOT NULL,
+    preference_id TEXT REFERENCES contact_preferences(id),
+    preference_revision INTEGER,
+    state TEXT NOT NULL CHECK(state IN ('pending','claimed','done','closed_manual','cancelled')),
+    not_before TEXT NOT NULL,
+    assigned_to TEXT REFERENCES staff(id),
+    claim_token TEXT,
+    claim_until TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    closed_outcome TEXT,
+    cancelled_reason TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(clinic_id,source_kind,source_id,source_event)
+);
+CREATE INDEX IF NOT EXISTS notification_queue ON notification_tasks(clinic_id,state,not_before);
+CREATE INDEX IF NOT EXISTS notification_patient ON notification_tasks(patient_id,state);
+CREATE TABLE IF NOT EXISTS notification_attempts (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES notification_tasks(id),
+    sequence INTEGER NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('reached','no_answer','busy','failed')),
+    disposition TEXT NOT NULL CHECK(disposition IN ('done','retry','manual')),
+    note TEXT NOT NULL,
+    actor_id TEXT NOT NULL REFERENCES staff(id),
+    consent_revision INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(task_id,sequence)
+);
 CREATE TABLE IF NOT EXISTS observations (
     id TEXT PRIMARY KEY,
     patient_id TEXT NOT NULL REFERENCES patients(id),
